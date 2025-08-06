@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Encoder.h>
+#include "PIDController.h"
 
 // Define pin variables
 const int INA = 2;
@@ -8,7 +9,7 @@ const int PWM_PIN = 3;
 
 // Define maximum speed and commanded speed (manually update these while testing)
 const int maxSpeed = 530; // Maximum speed in RPM
-float commandedSpeed = 530.0; // Commanded speed in RPM
+float RPMTarget = 330.0; // Commanded speed in RPM
 int commandedDirection = -1; // 1 for forward, -1 for reverse, 0 for stop
 
 // Define variables for encoder reading and initialize object
@@ -19,6 +20,10 @@ Encoder myEnc(encoderPinA, encoderPinB);
 // Define values for converting the encoder readings to speed (RPM)
 const int encoderCPR = 1200; // Counts per revolution of the encoder (output shaft)
 unsigned long lastTime = 0;
+
+// Initialize the PID controller object
+// Note: PID controller controls rate of change of PWM signal, not speed directly, which is why the maximum and minimum outputs are set as they are
+PIDController PID(1.0, 0.1, 0.05, -100, 100); // PID gains and output limits
 
 // Define a function to convert from rotational speed to PWM output
 int speedToPWM(int commandedSpeed) {
@@ -43,7 +48,7 @@ void sendMotorOutput(int speed, int direction) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // Initialize pins for motor control
   pinMode(INA, OUTPUT);
@@ -55,22 +60,32 @@ void setup() {
 long oldPosition  = 0;
 
 void loop() {
-  // Output commanded speed to the motor
-  int pwmValue = speedToPWM(commandedSpeed);
-  sendMotorOutput(pwmValue, commandedDirection);
-  Serial.print("Commanded Speed (PWM): ");
-  Serial.println(pwmValue);
-
   // Read the encoder position and calculate speed
   long newPosition = myEnc.read();
   unsigned long currentTime = millis();
-  if (currentTime - lastTime >= 100) { // Update every 100 ms
-    long deltaPosition = newPosition - oldPosition;
-    float speedRPM = (deltaPosition / (float)encoderCPR) * (60000.0 / (currentTime - lastTime));
-    Serial.print("Measured Speed (RPM): ");
-    Serial.println(speedRPM);
-    lastTime = currentTime;
-    oldPosition = newPosition;
-    delay(500);
-  }
+  float dt = currentTime - lastTime; // Time difference in milliseconds
+  long deltaPosition = newPosition - oldPosition;
+  float RPMActual = (deltaPosition / (float)encoderCPR) * (60000.0 / dt);
+  lastTime = currentTime;
+  oldPosition = newPosition;
+
+  // Compute the baselinePWM value based on commanded speed
+  int basePWM = speedToPWM(RPMTarget);
+
+  // Use the PID Controller to create a PWM adjustment
+  int deltaPWM = PID.compute(RPMTarget, RPMActual, dt*1000); // Convert dt to seconds for PID computation
+  int totalPWM = constrain(basePWM + deltaPWM, 0, 255); // Ensure PWM is within valid range
+  sendMotorOutput(totalPWM, commandedDirection);
+
+  // Print the current state
+  Serial.print("setpoint:");
+  Serial.print(RPMTarget);
+  Serial.print(" rpm:");
+  Serial.print(RPMActual);
+  Serial.print(" pwm:");
+  Serial.print(totalPWM);
+  Serial.print(" deltaPWM:");
+  Serial.println(deltaPWM);
+
+  //delay(50);
 }
