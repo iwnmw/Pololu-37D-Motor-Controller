@@ -3,7 +3,7 @@
 
 class PIDController {
     public:
-        PIDController(float kp, float ki, float kd, float outputMin = -100, float outputMax = 100);
+        PIDController(float kp, float ki, float kd, float outputMin = -255, float outputMax = 255);
 
         void setGains(float kp, float ki, float kd);
         void setOutputLimits(float min, float max);
